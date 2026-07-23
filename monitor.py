@@ -9,7 +9,20 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 STATUS_FILE = "last_dates.txt"
 
-TARGET_URL = "https://www.iflychina.net/visa/interview_schedule/1530557"
+
+# 多来源配置
+SOURCES = [
+    {
+        "name": "iFlyChina",
+        "url": "https://www.iflychina.net/visa/interview_schedule/1530557"
+    },
+
+    # 以后增加来源，在这里继续添加
+    # {
+    #     "name": "Source2",
+    #     "url": "https://example.com"
+    # }
+]
 
 
 def send_telegram(message):
@@ -20,8 +33,8 @@ def send_telegram(message):
         "inline_keyboard": [
             [
                 {
-                    "text": "🔗 打开监控页面",
-                    "url": TARGET_URL
+                    "text": "🔗 打开来源页面",
+                    "url": message.split("来源链接:")[-1].strip()
                 }
             ]
         ]
@@ -33,20 +46,18 @@ def send_telegram(message):
         "reply_markup": str(keyboard).replace("'", '"')
     }
 
-    response = requests.post(
+    requests.post(
         url,
         data=data,
         timeout=20
     )
 
-    print(response.text)
 
 
-
-def get_dates():
+def get_dates_from_source(source):
 
     response = requests.get(
-        TARGET_URL,
+        source["url"],
         headers={
             "User-Agent": "Mozilla/5.0"
         },
@@ -69,9 +80,6 @@ def get_dates():
     )
 
 
-    print("当前日期:", dates)
-
-
     return dates
 
 
@@ -88,18 +96,11 @@ def read_old_dates():
         encoding="utf-8"
     ) as f:
 
-        dates = f.read().splitlines()
-
-
-    if dates == ["none"]:
-        return []
-
-
-    return dates
+        return f.read().splitlines()
 
 
 
-def save_dates(dates):
+def save_dates(all_dates):
 
     with open(
         STATUS_FILE,
@@ -107,40 +108,64 @@ def save_dates(dates):
         encoding="utf-8"
     ) as f:
 
-        for date in dates:
-            f.write(date + "\n")
+        for item in all_dates:
+            f.write(item + "\n")
 
 
 
 def check_slot():
 
-    try:
-
-        current_dates = get_dates()
-
-    except Exception as e:
-
-        print(
-            "读取失败:",
-            e
-        )
-
-        return
-
-
     old_dates = read_old_dates()
 
+    new_saved_dates = []
 
-    # 只关注新增日期
-
-    new_dates = [
-        d for d in current_dates
-        if d not in old_dates
-    ]
+    alerts = []
 
 
-    if new_dates:
+    for source in SOURCES:
 
+        try:
+
+            dates = get_dates_from_source(source)
+
+        except Exception as e:
+
+            print(
+                source["name"],
+                "失败:",
+                e
+            )
+
+            continue
+
+
+        for date in dates:
+
+            record = (
+                source["name"]
+                +
+                "|"
+                +
+                date
+            )
+
+
+            new_saved_dates.append(record)
+
+
+            if record not in old_dates:
+
+                alerts.append(
+                    {
+                        "source": source["name"],
+                        "date": date,
+                        "url": source["url"]
+                    }
+                )
+
+
+
+    if alerts:
 
         now = datetime.now().strftime(
             "%Y-%m-%d %H:%M:%S"
@@ -149,25 +174,25 @@ def check_slot():
 
         message = (
             "🚨🚨 H1B Guangzhou SLOT Alert\n\n"
-            f"⏰ 时间:\n{now}\n\n"
-            "🟢 新增可用日期:\n\n"
-            +
-            "\n".join(new_dates)
-            +
-            "\n\n"
-            "请尽快确认预约情况。\n\n"
-            "来源:\n"
-            +
-            TARGET_URL
+            f"时间:\n{now}\n\n"
         )
+
+
+        for alert in alerts:
+
+            message += (
+                "🟢 新增日期:\n"
+                f"{alert['date']}\n"
+                f"来源:\n{alert['source']}\n"
+                f"来源链接:\n{alert['url']}\n\n"
+            )
 
 
         send_telegram(message)
 
 
-    # 无论有没有新增，都更新状态
 
-    save_dates(current_dates)
+    save_dates(new_saved_dates)
 
 
 
