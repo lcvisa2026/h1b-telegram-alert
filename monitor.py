@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import requests
 from datetime import datetime
 
@@ -10,35 +11,42 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 STATUS_FILE = "last_dates.txt"
 
 
-# 多来源配置
 SOURCES = [
     {
         "name": "iFlyChina",
         "url": "https://www.iflychina.net/visa/interview_schedule/1530557"
-    },
-
-    # 以后增加来源，在这里继续添加
-    # {
-    #     "name": "Source2",
-    #     "url": "https://example.com"
-    # }
+    }
 ]
 
 
-def send_telegram(message):
+KEYWORDS = [
+    "h1b",
+    "h-1b",
+    "guangzhou",
+    "广州",
+    "appointment",
+    "interview",
+    "slot",
+    "预约"
+]
 
-    url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+
+def send_telegram(message, url):
+
+    api = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
+
 
     keyboard = {
         "inline_keyboard": [
             [
                 {
                     "text": "🔗 打开来源页面",
-                    "url": message.split("来源链接:")[-1].strip()
+                    "url": url
                 }
             ]
         ]
     }
+
 
     data = {
         "chat_id": CHAT_ID,
@@ -46,47 +54,100 @@ def send_telegram(message):
         "reply_markup": str(keyboard).replace("'", '"')
     }
 
+
     requests.post(
-        url,
+        api,
         data=data,
         timeout=20
     )
 
 
 
-def get_dates_from_source(source):
+def request_page(url):
 
-    response = requests.get(
-        source["url"],
-        headers={
-            "User-Agent": "Mozilla/5.0"
-        },
-        timeout=20
+    for attempt in range(3):
+
+        try:
+
+            response = requests.get(
+                url,
+                headers={
+                    "User-Agent": "Mozilla/5.0"
+                },
+                timeout=20
+            )
+
+            response.raise_for_status()
+
+            return response.text
+
+
+        except Exception as e:
+
+            print(
+                f"第{attempt+1}次失败:",
+                e
+            )
+
+            time.sleep(10)
+
+
+    return None
+
+
+
+def extract_dates(text):
+
+    text_lower = text.lower()
+
+
+    matched_positions = []
+
+
+    for keyword in KEYWORDS:
+
+        pos = text_lower.find(
+            keyword.lower()
+        )
+
+        if pos != -1:
+
+            start = max(
+                0,
+                pos - 300
+            )
+
+            end = min(
+                len(text),
+                pos + 500
+            )
+
+            matched_positions.append(
+                text[start:end]
+            )
+
+
+    search_area = "\n".join(
+        matched_positions
     )
-
-    response.raise_for_status()
-
-    text = response.text
 
 
     dates = re.findall(
         r"20\d{2}[-/.]\d{1,2}[-/.]\d{1,2}",
-        text
+        search_area
     )
 
 
-    dates = sorted(
+    return sorted(
         list(set(dates))
     )
-
-
-    return dates
 
 
 
 def read_old_dates():
 
     if not os.path.exists(STATUS_FILE):
+
         return []
 
 
@@ -100,7 +161,7 @@ def read_old_dates():
 
 
 
-def save_dates(all_dates):
+def save_dates(dates):
 
     with open(
         STATUS_FILE,
@@ -108,8 +169,11 @@ def save_dates(all_dates):
         encoding="utf-8"
     ) as f:
 
-        for item in all_dates:
-            f.write(item + "\n")
+        for d in dates:
+
+            f.write(
+                d + "\n"
+            )
 
 
 
@@ -117,29 +181,44 @@ def check_slot():
 
     old_dates = read_old_dates()
 
-    new_saved_dates = []
+    current_records = []
 
     alerts = []
 
 
     for source in SOURCES:
 
-        try:
 
-            dates = get_dates_from_source(source)
+        html = request_page(
+            source["url"]
+        )
 
-        except Exception as e:
+
+        if not html:
 
             print(
                 source["name"],
-                "失败:",
-                e
+                "无法读取"
             )
 
             continue
 
 
+
+        dates = extract_dates(
+            html
+        )
+
+
+        print(
+            source["name"],
+            dates
+        )
+
+
+
         for date in dates:
+
 
             record = (
                 source["name"]
@@ -150,7 +229,9 @@ def check_slot():
             )
 
 
-            new_saved_dates.append(record)
+            current_records.append(
+                record
+            )
 
 
             if record not in old_dates:
@@ -167,32 +248,37 @@ def check_slot():
 
     if alerts:
 
-        now = datetime.now().strftime(
-            "%Y-%m-%d %H:%M:%S"
-        )
-
 
         message = (
             "🚨🚨 H1B Guangzhou SLOT Alert\n\n"
-            f"时间:\n{now}\n\n"
+            f"时间:\n"
+            +
+            datetime.now().strftime(
+                "%Y-%m-%d %H:%M:%S"
+            )
+            +
+            "\n\n"
         )
 
 
-        for alert in alerts:
+        for item in alerts:
 
             message += (
                 "🟢 新增日期:\n"
-                f"{alert['date']}\n"
-                f"来源:\n{alert['source']}\n"
-                f"来源链接:\n{alert['url']}\n\n"
+                f"{item['date']}\n"
+                f"来源:\n{item['source']}\n\n"
             )
 
 
-        send_telegram(message)
+        send_telegram(
+            message,
+            alerts[0]["url"]
+        )
 
 
-
-    save_dates(new_saved_dates)
+    save_dates(
+        current_records
+    )
 
 
 
