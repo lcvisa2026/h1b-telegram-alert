@@ -13,19 +13,22 @@ def send_telegram(message):
         "text": message
     }
 
-    requests.post(url, data=data)
+    response = requests.post(url, data=data)
+
+    print(response.text)
 
 
 def check_slot():
-    # 后续这里接入合法的数据来源
-    # 当前先测试通知功能
-
-    slot_found = False
+    # 模拟发现广州 H1B slot
+    slot_found = True
 
     if slot_found:
         send_telegram(
-            "🚨 H1B Guangzhou Slot Alert!\n"
-            "发现新的可预约日期，请登录官方系统确认。"
+            "🚨 H1B Slot Alert\n\n"
+            "地点: Guangzhou\n"
+            "类型: H-1B\n"
+            "状态: 发现可预约日期\n\n"
+            "请登录官方预约系统确认。"
         )
 
 
