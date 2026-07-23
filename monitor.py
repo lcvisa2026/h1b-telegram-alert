@@ -20,7 +20,7 @@ def send_telegram(message):
         "inline_keyboard": [
             [
                 {
-                    "text": "打开监控页面",
+                    "text": "🔗 打开监控页面",
                     "url": TARGET_URL
                 }
             ]
@@ -58,11 +58,6 @@ def get_dates():
     text = response.text
 
 
-    # 查找日期格式：
-    # 2026-09-15
-    # 2026/09/15
-    # 2026.09.15
-
     dates = re.findall(
         r"20\d{2}[-/.]\d{1,2}[-/.]\d{1,2}",
         text
@@ -74,23 +69,33 @@ def get_dates():
     )
 
 
+    print("当前日期:", dates)
+
+
     return dates
 
 
 
 def read_old_dates():
 
-    if os.path.exists(STATUS_FILE):
+    if not os.path.exists(STATUS_FILE):
+        return []
 
-        with open(
-            STATUS_FILE,
-            "r",
-            encoding="utf-8"
-        ) as f:
 
-            return f.read().splitlines()
+    with open(
+        STATUS_FILE,
+        "r",
+        encoding="utf-8"
+    ) as f:
 
-    return []
+        dates = f.read().splitlines()
+
+
+    if dates == ["none"]:
+        return []
+
+
+    return dates
 
 
 
@@ -116,7 +121,7 @@ def check_slot():
     except Exception as e:
 
         print(
-            "读取页面失败:",
+            "读取失败:",
             e
         )
 
@@ -126,19 +131,15 @@ def check_slot():
     old_dates = read_old_dates()
 
 
-    if current_dates != old_dates:
+    # 只关注新增日期
+
+    new_dates = [
+        d for d in current_dates
+        if d not in old_dates
+    ]
 
 
-        added = [
-            d for d in current_dates
-            if d not in old_dates
-        ]
-
-
-        removed = [
-            d for d in old_dates
-            if d not in current_dates
-        ]
+    if new_dates:
 
 
         now = datetime.now().strftime(
@@ -147,43 +148,15 @@ def check_slot():
 
 
         message = (
-            "🚨 H1B Guangzhou Slot Alert\n\n"
-            f"时间: {now}\n\n"
-        )
-
-
-        if added:
-
-            message += (
-                "🟢 新增日期:\n"
-                +
-                "\n".join(added)
-                +
-                "\n\n"
-            )
-
-
-        if removed:
-
-            message += (
-                "🔴 消失日期:\n"
-                +
-                "\n".join(removed)
-                +
-                "\n\n"
-            )
-
-
-        message += (
-            "当前日期列表:\n"
+            "🚨🚨 H1B Guangzhou SLOT Alert\n\n"
+            f"⏰ 时间:\n{now}\n\n"
+            "🟢 新增可用日期:\n\n"
             +
-            (
-                "\n".join(current_dates)
-                if current_dates
-                else "无"
-            )
+            "\n".join(new_dates)
             +
-            "\n\n来源:\n"
+            "\n\n"
+            "请尽快确认预约情况。\n\n"
+            "来源:\n"
             +
             TARGET_URL
         )
@@ -192,7 +165,9 @@ def check_slot():
         send_telegram(message)
 
 
-        save_dates(current_dates)
+    # 无论有没有新增，都更新状态
+
+    save_dates(current_dates)
 
 
 
