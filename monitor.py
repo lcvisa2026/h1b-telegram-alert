@@ -1,16 +1,15 @@
 import os
+import re
 import requests
-import hashlib
 from datetime import datetime
 
 
 BOT_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-STATUS_FILE = "last_status.txt"
+STATUS_FILE = "last_date.txt"
 
 
-# iFlyChina H1B 信息页面
 TARGET_URL = "https://www.iflychina.net/visa/interview_schedule/1530557"
 
 
@@ -30,7 +29,7 @@ def send_telegram(message):
     )
 
 
-def get_page_info():
+def get_dates_from_page():
 
     response = requests.get(
         TARGET_URL,
@@ -42,49 +41,32 @@ def get_page_info():
 
     response.raise_for_status()
 
-    text = response.text.lower()
+    text = response.text
 
 
-    keywords = [
-        "guangzhou",
-        "广州",
-        "h1b",
-        "h-1b",
-        "available",
-        "appointment",
-        "slot",
-        "放号",
-        "预约",
-        "日期"
-    ]
+    # 匹配：
+    # 2026-09-15
+    # 2026/09/15
+    # 2026.09.15
+
+    dates = re.findall(
+        r"20\d{2}[-/.]\d{1,2}[-/.]\d{1,2}",
+        text
+    )
 
 
-    found_keywords = []
+    # 去重 + 排序
 
-    for word in keywords:
-        if word.lower() in text:
-            found_keywords.append(word)
+    dates = list(set(dates))
 
-
-    # 提取网页前部分作为摘要
-    summary = response.text[:800]
+    dates.sort()
 
 
-    # 生成页面状态指纹
-    fingerprint = hashlib.md5(
-        (
-            ",".join(found_keywords)
-            +
-            summary
-        ).encode("utf-8")
-    ).hexdigest()
-
-
-    return fingerprint, found_keywords, summary
+    return dates
 
 
 
-def read_old_status():
+def read_old_date():
 
     if os.path.exists(STATUS_FILE):
 
@@ -93,20 +75,22 @@ def read_old_status():
             "r",
             encoding="utf-8"
         ) as f:
+
             return f.read().strip()
 
     return ""
 
 
 
-def save_status(status):
+def save_date(date):
 
     with open(
         STATUS_FILE,
         "w",
         encoding="utf-8"
     ) as f:
-        f.write(status)
+
+        f.write(date)
 
 
 
@@ -114,22 +98,30 @@ def check_slot():
 
     try:
 
-        current_status, keywords, summary = get_page_info()
+        dates = get_dates_from_page()
 
     except Exception as e:
 
-        print(
-            "网页读取失败:",
-            e
-        )
+        print(e)
+        return
+
+
+    if not dates:
+
+        print("没有找到日期")
 
         return
 
 
-    old_status = read_old_status()
+    # 取最早日期
+
+    current_date = dates[0]
 
 
-    if current_status != old_status:
+    old_date = read_old_date()
+
+
+    if current_date != old_date:
 
 
         now = datetime.now().strftime(
@@ -138,21 +130,19 @@ def check_slot():
 
 
         message = (
-            "🚨 H1B Guangzhou Monitor\n\n"
+            "🚨 H1B Guangzhou Slot Alert\n\n"
             f"时间: {now}\n\n"
-            f"发现关键词:\n"
-            f"{', '.join(keywords)}\n\n"
-            "页面发生变化，请查看：\n"
-            f"{TARGET_URL}\n\n"
-            "摘要:\n"
-            f"{summary[:300]}"
+            f"旧日期:\n{old_date or '无'}\n\n"
+            f"新日期:\n{current_date}\n\n"
+            "请登录官方系统确认。\n\n"
+            f"来源:\n{TARGET_URL}"
         )
 
 
         send_telegram(message)
 
 
-        save_status(current_status)
+        save_date(current_date)
 
 
 
