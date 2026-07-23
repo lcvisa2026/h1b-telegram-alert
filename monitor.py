@@ -9,7 +9,6 @@ CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 STATUS_FILE = "last_dates.txt"
 
-
 TARGET_URL = "https://www.iflychina.net/visa/interview_schedule/1530557"
 
 
@@ -17,16 +16,31 @@ def send_telegram(message):
 
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
 
-    data = {
-        "chat_id": CHAT_ID,
-        "text": message
+    keyboard = {
+        "inline_keyboard": [
+            [
+                {
+                    "text": "打开监控页面",
+                    "url": TARGET_URL
+                }
+            ]
+        ]
     }
 
-    requests.post(
+    data = {
+        "chat_id": CHAT_ID,
+        "text": message,
+        "reply_markup": str(keyboard).replace("'", '"')
+    }
+
+    response = requests.post(
         url,
         data=data,
         timeout=20
     )
+
+    print(response.text)
+
 
 
 def get_dates():
@@ -44,13 +58,16 @@ def get_dates():
     text = response.text
 
 
+    # 查找日期格式：
+    # 2026-09-15
+    # 2026/09/15
+    # 2026.09.15
+
     dates = re.findall(
         r"20\d{2}[-/.]\d{1,2}[-/.]\d{1,2}",
         text
     )
 
-
-    # 去重 + 排序
 
     dates = sorted(
         list(set(dates))
@@ -85,11 +102,8 @@ def save_dates(dates):
         encoding="utf-8"
     ) as f:
 
-        for d in dates:
-
-            f.write(
-                d + "\n"
-            )
+        for date in dates:
+            f.write(date + "\n")
 
 
 
@@ -102,16 +116,14 @@ def check_slot():
     except Exception as e:
 
         print(
-            "读取失败:",
+            "读取页面失败:",
             e
         )
 
         return
 
 
-
     old_dates = read_old_dates()
-
 
 
     if current_dates != old_dates:
@@ -127,7 +139,6 @@ def check_slot():
             d for d in old_dates
             if d not in current_dates
         ]
-
 
 
         now = datetime.now().strftime(
