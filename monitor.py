@@ -1,10 +1,14 @@
 import os
 import requests
+import hashlib
 
 BOT_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
 STATUS_FILE = "last_status.txt"
+
+# 这里填写你要监控的公开网页地址
+TARGET_URL = "https://example.com"
 
 
 def send_telegram(message):
@@ -18,13 +22,39 @@ def send_telegram(message):
     requests.post(url, data=data)
 
 
-def get_current_status():
-    """
-    这里以后接入真实数据来源
-    目前模拟一个广州 H1B 日期
-    """
+def get_page_status():
+    try:
+        response = requests.get(
+            TARGET_URL,
+            timeout=20,
+            headers={
+                "User-Agent": "Mozilla/5.0"
+            }
+        )
 
-    return "Guangzhou_H1B_2026-10-01"
+        text = response.text.lower()
+
+        keywords = [
+            "guangzhou",
+            "h1b",
+            "available",
+            "appointment"
+        ]
+
+        found = [
+            word for word in keywords
+            if word in text
+        ]
+
+        status = ",".join(found)
+
+        # 用hash保存网页状态
+        return hashlib.md5(
+            status.encode()
+        ).hexdigest()
+
+    except Exception as e:
+        return "error"
 
 
 def read_old_status():
@@ -42,20 +72,18 @@ def save_status(status):
 
 def check_slot():
 
-    current_status = get_current_status()
-    old_status = read_old_status()
+    current = get_page_status()
+    old = read_old_status()
 
-    if current_status != old_status:
+    if current != old:
 
         send_telegram(
-            "🚨 H1B Slot Alert\n\n"
-            f"地点: Guangzhou\n"
-            f"类型: H-1B\n"
-            f"状态变化:\n{current_status}\n\n"
+            "🚨 H1B Slot Monitor\n\n"
+            "检测到页面状态变化。\n"
             "请登录官方系统确认。"
         )
 
-        save_status(current_status)
+        save_status(current)
 
 
 if __name__ == "__main__":
