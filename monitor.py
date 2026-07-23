@@ -7,7 +7,7 @@ from datetime import datetime
 BOT_TOKEN = os.environ.get("TELEGRAM_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 
-STATUS_FILE = "last_date.txt"
+STATUS_FILE = "last_dates.txt"
 
 
 TARGET_URL = "https://www.iflychina.net/visa/interview_schedule/1530557"
@@ -29,7 +29,7 @@ def send_telegram(message):
     )
 
 
-def get_dates_from_page():
+def get_dates():
 
     response = requests.get(
         TARGET_URL,
@@ -44,11 +44,6 @@ def get_dates_from_page():
     text = response.text
 
 
-    # 匹配：
-    # 2026-09-15
-    # 2026/09/15
-    # 2026.09.15
-
     dates = re.findall(
         r"20\d{2}[-/.]\d{1,2}[-/.]\d{1,2}",
         text
@@ -57,16 +52,16 @@ def get_dates_from_page():
 
     # 去重 + 排序
 
-    dates = list(set(dates))
-
-    dates.sort()
+    dates = sorted(
+        list(set(dates))
+    )
 
 
     return dates
 
 
 
-def read_old_date():
+def read_old_dates():
 
     if os.path.exists(STATUS_FILE):
 
@@ -76,13 +71,13 @@ def read_old_date():
             encoding="utf-8"
         ) as f:
 
-            return f.read().strip()
+            return f.read().splitlines()
 
-    return ""
+    return []
 
 
 
-def save_date(date):
+def save_dates(dates):
 
     with open(
         STATUS_FILE,
@@ -90,7 +85,11 @@ def save_date(date):
         encoding="utf-8"
     ) as f:
 
-        f.write(date)
+        for d in dates:
+
+            f.write(
+                d + "\n"
+            )
 
 
 
@@ -98,30 +97,37 @@ def check_slot():
 
     try:
 
-        dates = get_dates_from_page()
+        current_dates = get_dates()
 
     except Exception as e:
 
-        print(e)
-        return
-
-
-    if not dates:
-
-        print("没有找到日期")
+        print(
+            "读取失败:",
+            e
+        )
 
         return
 
 
-    # 取最早日期
 
-    current_date = dates[0]
-
-
-    old_date = read_old_date()
+    old_dates = read_old_dates()
 
 
-    if current_date != old_date:
+
+    if current_dates != old_dates:
+
+
+        added = [
+            d for d in current_dates
+            if d not in old_dates
+        ]
+
+
+        removed = [
+            d for d in old_dates
+            if d not in current_dates
+        ]
+
 
 
         now = datetime.now().strftime(
@@ -132,17 +138,50 @@ def check_slot():
         message = (
             "🚨 H1B Guangzhou Slot Alert\n\n"
             f"时间: {now}\n\n"
-            f"旧日期:\n{old_date or '无'}\n\n"
-            f"新日期:\n{current_date}\n\n"
-            "请登录官方系统确认。\n\n"
-            f"来源:\n{TARGET_URL}"
+        )
+
+
+        if added:
+
+            message += (
+                "🟢 新增日期:\n"
+                +
+                "\n".join(added)
+                +
+                "\n\n"
+            )
+
+
+        if removed:
+
+            message += (
+                "🔴 消失日期:\n"
+                +
+                "\n".join(removed)
+                +
+                "\n\n"
+            )
+
+
+        message += (
+            "当前日期列表:\n"
+            +
+            (
+                "\n".join(current_dates)
+                if current_dates
+                else "无"
+            )
+            +
+            "\n\n来源:\n"
+            +
+            TARGET_URL
         )
 
 
         send_telegram(message)
 
 
-        save_date(current_date)
+        save_dates(current_dates)
 
 
 
